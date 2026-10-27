@@ -74,6 +74,7 @@ class AimdHost:
         packets_received = self.network_interface.receive_all()
         for packet in packets_received:
             # Compute and record the RTT
+            self.timeout_calculator.add_data_point(current_time - packet.sent_timestamp)
 
             # Update inflight information for self.sliding_window
             self.sliding_window.remove_inflight_information(packet.sequence_number)
@@ -87,7 +88,15 @@ class AimdHost:
             # You may find the excerpt useful 
             # https://www.dropbox.com/scl/fi/lo8tviblxzugn8te3v8wg/book-excerpt.pdf?rlkey=xie2osifzgmox1vyxopz9h7sh&dl=0
 
-            self.set_window_size(new_window, self.sliding_window.get_window_size())
+            old_window = self.sliding_window.get_window_size()
+            if self.slow_start:
+                # One packet per ACK approximately doubles the window per RTT.
+                new_window = old_window + 1
+            else:
+                # This adds approximately one packet to the window per RTT.
+                new_window = old_window + (1 / old_window)
+
+            self.set_window_size(new_window, old_window)
 
         # TODO: STEP 2 - Retry any messages that have timed out
         #  - When you transmit each packet (in steps 2 and 3), you should track that message as inflight
@@ -103,9 +112,33 @@ class AimdHost:
         # REPLACE pass with your code
 
         retriable_packets = self.sliding_window.get_packets_to_retry()
+
         for retriable_message in retriable_packets:
+            sequence_number = retriable_message.sequence_number
+            packet = Packet(current_time, sequence_number, True, False)
+
+            retriable_message.timeout = current_time + self.timeout_calculator.timeout()
+            self.network_interface.transmit(packet)
+
+        if len(retriable_packets) > 0:
+            estimated_rtt = (
+                self.timeout_calculator.mean_estimate()
+                or self.timeout_calculator.timeout()
+            )
+
+            enough_time_since_last_decrease = (
+                current_time - self.last_multiplicative_decrease >= estimated_rtt
+            )
+
+            if enough_time_since_last_decrease:
+                old_window = self.sliding_window.get_window_size()
+                new_window = max(old_window / 2, 1)
+                self.set_window_size(new_window, old_window)
+                self.last_multiplicative_decrease = current_time
+
+            # Once the first timeout occurs, use congestion avoidance.
             self.slow_start = False
-            pass 
+
 
         # TODO: STEP 3 - Transmit new messages
         #  - When you transmit each packet (in steps 2 and 3), you should track that message as inflight
@@ -115,8 +148,15 @@ class AimdHost:
         #      - Sequence numbers start from 0 and increase by 1 for each new message
         #      - Use the transmit() function of the network interface to send the packet
         # REPLACE pass with your code
-        for i in range(0, self.sliding_window.compute_number_of_packets_to_send()):
-            pass 
+        for _ in range(self.sliding_window.compute_number_of_packets_to_send()):
+            sequence_number = self.advance_sequence_number()
+            packet = Packet(current_time, sequence_number, False, False)
+
+            self.sliding_window.add_inflight_information(
+                sequence_number,
+                current_time + self.timeout_calculator.timeout(),
+            )
+            self.network_interface.transmit(packet)
 
         # STEP 4 - Return
         #  - Return the largest in-order sequence number

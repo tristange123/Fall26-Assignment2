@@ -194,8 +194,7 @@ int main(int argc, char* argv[]) {
   epoll_event listen_ev{};
   listen_ev.events = EPOLLIN;
   listen_ev.data.ptr = nullptr;
-  if (/** TODO: you should replace this line and call some epool API here, 
-          to add the handler listen_fd to the created epoll (represented by g_epoll_fd)  */ 1 < 0) {
+  if (epoll_ctl(g_epoll_fd, EPOLL_CTL_ADD, listen_fd, &listen_ev) < 0) {
     perror("epoll API ADD listen");
     return 1;
   }
@@ -205,8 +204,7 @@ int main(int argc, char* argv[]) {
 
   epoll_event events[kMaxEvents];
   while (true) {
-    // TODO: you should replace this line: int n = 0 
-    int n = 0; // Here we should call some epoll API to monitor the poll of handlers(file descriptors, i.e., fds). 
+    int n = epoll_wait(g_epoll_fd, events, kMaxEvents, -1);
     // The API will block here until some fds become active (i.e., readable/writable/has new connections, etc)
     if (n < 0) {
       if (errno == EINTR) continue;
@@ -217,7 +215,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < n; ++i) {
       if (events[i].data.ptr == nullptr) {
         // This is the listening socket, it is used to accept connections rather than receiving request data
-        // TODO: Fill something here
+        AcceptConnections(listen_fd);
 
         continue;
       }

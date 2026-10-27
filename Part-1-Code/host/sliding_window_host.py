@@ -42,7 +42,8 @@ class SlidingWindowHost(Host, ABC):
         # REPLACE pass with your code
         packets_received = self.network_interface.receive_all()
         for packet in packets_received:
-            pass 
+            self.sliding_window.remove_inflight_information(packet.sequence_number)
+            self.timeout_calculator.add_data_point(current_time - packet.sent_timestamp)
 
 
         # TODO: STEP 2 - Retry any messages that have timed out
@@ -57,7 +58,14 @@ class SlidingWindowHost(Host, ABC):
         # REPLACE pass with your code 
         retriable_packets = self.sliding_window.get_packets_to_retry()
         for retriable_message in retriable_packets:
-            pass 
+            sequence_number = retriable_message.sequence_number
+            packet = Packet(current_time, sequence_number, True, False)
+
+            # Keep the existing entry in place so the inflight list remains
+            # ordered by sequence number, but refresh its timeout.
+            retriable_message.timeout = current_time + self.timeout_calculator.timeout()
+            self.network_interface.transmit(packet)
+
 
         # TODO: STEP 3 - Transmit new messages
         #  - When you transmit each packet (in steps 2 and 3), you should track that message as inflight
@@ -67,8 +75,15 @@ class SlidingWindowHost(Host, ABC):
         #      - Sequence numbers start from 0 and increase by 1 for each new message
         #      - Use the transmit() function of the network interface to send the packet
         # REPLACE pass with your code 
-        for i in range(0, self.sliding_window.compute_number_of_packets_to_send()):
-            pass
+        for _ in range(self.sliding_window.compute_number_of_packets_to_send()):
+            sequence_number = self.advance_sequence_number()
+            packet = Packet(current_time, sequence_number, False, False)
+
+            self.sliding_window.add_inflight_information(
+                sequence_number,
+                current_time + self.timeout_calculator.timeout(),
+            )
+            self.network_interface.transmit(packet)
 
         # STEP 4 - Return
         #  - Return the largest in-order sequence number

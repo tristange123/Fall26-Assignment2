@@ -44,9 +44,19 @@ class StopAndWaitHost(Host, ABC):
         #  - You should mark these messages as successfully delivered. inflight_packet and last_transmitted_sequence_number might need update
         #  - Remember the acked packet also gives as a fresh RTT sample.
         #  REPLACE the pass with your code
+
         packets_received = self.network_interface.receive_all()
         for packet in packets_received:
-            pass
+            if packet.sequence_number == self.last_transmitted_sequence_number:
+                self.inflight_packet = None
+                self.last_acked_sequence_number = self.last_transmitted_sequence_number
+
+                self.timeout_calculator.add_data_point(current_time - packet.sent_timestamp)
+                
+
+
+
+            
 
         # TODO: STEP 2 - Retry any messages that have timed out
         #  - When you transmit a packet (in steps 2 and 3), you should track that message as inflight
@@ -58,7 +68,12 @@ class StopAndWaitHost(Host, ABC):
         #      - Use the transmit() function of the network interface to send the packet
         #  REPLACE the pass with your code
         if self.inflight_packet is not None and self.inflight_timeout < current_time:
-            pass
+            newPacket = Packet(current_time, self.inflight_packet.sequence_number, True, False)
+            self.network_interface.transmit(newPacket)
+            self.inflight_packet = newPacket
+            self.inflight_timeout = current_time + self.timeout_calculator.timeout();
+
+            
         
         # TODO: STEP 3 - Transmit new messages 
         #  - When you transmit a packet (in steps 2 and 3), you should track that message as inflight
@@ -69,7 +84,13 @@ class StopAndWaitHost(Host, ABC):
         #      - Use the transmit() function of the network interface to send the packet
         #  REPLACE the pass with your code
         if self.inflight_packet is None:
-            pass
+            self.advance_sequence_number()
+            newPacket = Packet(current_time, self.last_transmitted_sequence_number, False, False)
+            self.network_interface.transmit(newPacket)
+            self.inflight_packet = newPacket
+            self.inflight_timeout = current_time + self.timeout_calculator.timeout()
+
+            
 
         # STEP 4 - Return
         #  - Return the largest in-order sequence number
